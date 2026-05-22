@@ -78,3 +78,6 @@ npm run check        # Lint, format, and type check
 ## License
 
 MIT
+
+Evaluated by Forge
+
