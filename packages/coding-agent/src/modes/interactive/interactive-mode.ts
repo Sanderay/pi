@@ -2496,6 +2496,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/todos") {
+				await this.handleTodosCommand();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/fork") {
 				this.showUserMessageSelector();
 				this.editor.setText("");
@@ -5284,6 +5289,67 @@ export class InteractiveMode {
 		} catch (error: unknown) {
 			await this.handleFatalRuntimeError("Failed to create session", error);
 		}
+	}
+
+	private async handleTodosCommand(): Promise<void> {
+		const cwd = this.sessionManager.getCwd();
+		const rgPath = await ensureTool("rg", true);
+
+		if (!rgPath) {
+			this.showError("ripgrep (rg) is not available. Install it to use /todos.");
+			return;
+		}
+
+		const result = spawnSync(
+			rgPath,
+			["--line-number", "--no-heading", "--color=never", "-e", "TODO|FIXME|HACK|XXX", "."],
+			{ cwd, encoding: "utf-8" },
+		);
+
+		if (result.error) {
+			this.showError(`Failed to run ripgrep: ${result.error.message}`);
+			return;
+		}
+
+		const output = result.stdout?.trim() ?? "";
+
+		if (!output) {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("dim", "No TODOs found."), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		// Group matches by file
+		const byFile = new Map<string, Array<{ line: number; text: string }>>();
+		for (const raw of output.split("\n")) {
+			const colonIdx = raw.indexOf(":");
+			if (colonIdx === -1) continue;
+			const secondColon = raw.indexOf(":", colonIdx + 1);
+			if (secondColon === -1) continue;
+			const file = raw.slice(0, colonIdx);
+			const lineNum = Number.parseInt(raw.slice(colonIdx + 1, secondColon), 10);
+			const text = raw.slice(secondColon + 1).trim();
+			if (!byFile.has(file)) byFile.set(file, []);
+			byFile.get(file)!.push({ line: lineNum, text });
+		}
+
+		let total = 0;
+		let md = "";
+		for (const [file, items] of byFile) {
+			md += `**${file}**\n`;
+			for (const item of items) {
+				md += `  \`${item.line}\` ${item.text}\n`;
+				total++;
+			}
+			md += "\n";
+		}
+
+		const header = theme.bold(theme.fg("accent", `TODOs (${total})`));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(header, 1, 0));
+		this.chatContainer.addChild(new Markdown(md.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
+		this.ui.requestRender();
 	}
 
 	private handleDebugCommand(): void {
