@@ -228,6 +228,89 @@ export interface InteractiveModeOptions {
 	verbose?: boolean;
 }
 
+
+// ---------------------------------------------------------------------------
+// TODO scanner — exported so it can be unit-tested independently
+// ---------------------------------------------------------------------------
+
+/** A single TODO hit found in the workspace. */
+export interface TodoItem {
+	/** Path relative to the scanned root */
+	file: string;
+	/** 1-based line number */
+	line: number;
+	/** The raw text of the matching line */
+	text: string;
+}
+
+/**
+ * Recursively scan `rootDir` for TODO comments in source files.
+ *
+ * Skips directories that are unlikely to contain hand-written code:
+ * `node_modules`, `dist`, `build`, `.git`, `.next`, `out`, `coverage`.
+ *
+ * Only files whose extension is in the well-known source-file list are
+ * scanned so that binary files and lock-files are ignored.
+ */
+export function scanTodos(rootDir: string): TodoItem[] {
+	const SKIP_DIRS = new Set(["node_modules", "dist", "build", ".git", ".next", "out", "coverage", ".cache"]);
+	const SOURCE_EXTENSIONS = new Set([
+		".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+		".py", ".rb", ".go", ".rs", ".java", ".kt", ".swift",
+		".c", ".cpp", ".h", ".hpp", ".cs", ".php",
+		".sh", ".bash", ".zsh", ".fish",
+		".md", ".mdx", ".txt", ".yaml", ".yml", ".toml", ".json",
+		".css", ".scss", ".sass", ".less",
+		".html", ".vue", ".svelte",
+	]);
+
+	const TODO_RE = /TODO/i;
+	const results: TodoItem[] = [];
+
+	const walk = (dir: string): void => {
+		let entries: fs.Dirent[];
+		try {
+			entries = fs.readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return;
+		}
+
+		for (const entry of entries) {
+			if (entry.isDirectory()) {
+				if (!SKIP_DIRS.has(entry.name)) {
+					walk(path.join(dir, entry.name));
+				}
+			} else if (entry.isFile()) {
+				const ext = path.extname(entry.name).toLowerCase();
+				if (!SOURCE_EXTENSIONS.has(ext)) continue;
+
+				const filePath = path.join(dir, entry.name);
+				let text: string;
+				try {
+					text = fs.readFileSync(filePath, "utf-8");
+				} catch {
+					continue;
+				}
+
+				const lines = text.split("\n");
+				for (let i = 0; i < lines.length; i++) {
+					if (TODO_RE.test(lines[i]!)) {
+						results.push({
+							file: path.relative(rootDir, filePath),
+							line: i + 1,
+							text: lines[i]!,
+						});
+					}
+				}
+			}
+		}
+	};
+
+	walk(rootDir);
+	return results;
+}
+
+
 export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;
 	private ui: TUI;
@@ -2537,7 +2620,12 @@ export class InteractiveMode {
 				await this.handleReloadCommand();
 				return;
 			}
-			if (text === "/debug") {
+			if (text === "/todo") {
+				this.handleTodoCommand();
+				this.editor.setText("");
+				return;
+			}
+				if (text === "/debug") {
 				this.handleDebugCommand();
 				this.editor.setText("");
 				return;
@@ -5316,6 +5404,36 @@ export class InteractiveMode {
 		this.chatContainer.addChild(
 			new Text(`${theme.fg("accent", "✓ Debug log written")}\n${theme.fg("muted", debugLogPath)}`, 1, 1),
 		);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Scan the workspace for TODO comments and display them in the chat.
+	 */
+	private handleTodoCommand(): void {
+		const cwd = this.sessionManager.getCwd();
+		const results = scanTodos(cwd);
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "TODOs")), 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+
+		if (results.length === 0) {
+			this.chatContainer.addChild(new Text(theme.fg("dim", "  No TODO comments found."), 1, 0));
+		} else {
+			const lines = results.map(
+				({ file, line, text }) =>
+					`${theme.fg("mdLink", file)}${theme.fg("dim", `:`)}${theme.fg("accent", String(line))}  ${theme.fg("text", text.trim())}`,
+			);
+			this.chatContainer.addChild(new Text(lines.join("\n"), 1, 0));
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(
+				new Text(theme.fg("dim", `${results.length} TODO${results.length === 1 ? "" : "s"} found`), 1, 0),
+			);
+		}
+
+		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}
 
