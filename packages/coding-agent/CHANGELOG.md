@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added `/todos` slash command to show all TODO/FIXME/HACK/XXX comments in the codebase, grouped by file with line numbers.
 - Added Together AI to built-in provider setup, `/login` API-key auth, and default model resolution ([#3624](https://github.com/earendil-works/pi-mono/pull/3624) by [@Nutlope](https://github.com/Nutlope)).
 
 ### Fixed
