@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added `/todos` slash command that uses ripgrep to search the codebase for TODO, FIXME, HACK, and XXX comments, grouped by file with line numbers.
 - Added Together AI to built-in provider setup, `/login` API-key auth, and default model resolution ([#3624](https://github.com/earendil-works/pi-mono/pull/3624) by [@Nutlope](https://github.com/Nutlope)).
 
 ### Fixed

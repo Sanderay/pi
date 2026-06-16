@@ -90,7 +90,7 @@ import { parseGitUrl } from "../../utils/git.js";
 import { getCwdRelativePath } from "../../utils/paths.js";
 import { getPiUserAgent } from "../../utils/pi-user-agent.js";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
-import { ensureTool } from "../../utils/tools-manager.js";
+import { ensureTool, getToolPath } from "../../utils/tools-manager.js";
 import { checkForNewPiVersion } from "../../utils/version-check.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
@@ -2555,6 +2555,11 @@ export class InteractiveMode {
 			if (text === "/resume") {
 				this.showSessionSelector();
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/todos") {
+				this.editor.setText("");
+				await this.handleTodosCommand();
 				return;
 			}
 			if (text === "/quit") {
@@ -5284,6 +5289,74 @@ export class InteractiveMode {
 		} catch (error: unknown) {
 			await this.handleFatalRuntimeError("Failed to create session", error);
 		}
+	}
+
+	private async handleTodosCommand(): Promise<void> {
+		const cwd = this.sessionManager.getCwd();
+		const rgPath = getToolPath("rg") ?? "rg";
+
+		const result = spawnSync(
+			rgPath,
+			[
+				"--line-number",
+				"--with-filename",
+				"--color", "never",
+				"--type", "ts",
+				"--type", "js",
+				"--type", "py",
+				"--type", "go",
+				"--type", "rust",
+				"--type", "c",
+				"--type", "cpp",
+				"--type", "java",
+				"--type", "ruby",
+				"--type", "sh",
+				"--glob", "!node_modules",
+				"--glob", "!dist",
+				"--glob", "!.git",
+				"(TODO|FIXME|HACK|XXX)",
+			],
+			{ cwd, encoding: "utf-8" },
+		);
+
+		const output = (result.stdout ?? "").trim();
+
+		if (!output) {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("dim", "No TODO, FIXME, HACK, or XXX comments found."), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		// Group matches by file
+		const byFile = new Map<string, Array<{ line: number; text: string }>>();
+		for (const raw of output.split("\n")) {
+			const match = raw.match(/^(.+?):([0-9]+):(.*)$/);
+			if (!match) continue;
+			const [, file, lineStr, text] = match;
+			const lineNum = Number(lineStr);
+			const list = byFile.get(file!) ?? [];
+			list.push({ line: lineNum, text: text! });
+			byFile.set(file!, list);
+		}
+
+		const lines: string[] = [];
+		for (const [file, entries] of byFile) {
+			lines.push(theme.fg("accent", file));
+			for (const { line, text } of entries) {
+				const trimmed = text.trim();
+				lines.push(theme.fg("dim", `  ${line}: `) + trimmed);
+			}
+		}
+
+		const totalCount = Array.from(byFile.values()).reduce((sum, arr) => sum + arr.length, 0);
+		const summary = `${theme.bold("TODOs")} ${theme.fg("dim", `(${totalCount} item${totalCount === 1 ? "" : "s"} in ${byFile.size} file${byFile.size === 1 ? "" : "s"})`)}`;
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(summary, 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(lines.join("\n"), 1, 0));
+		this.ui.requestRender();
 	}
 
 	private handleDebugCommand(): void {
