@@ -2557,6 +2557,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/todos") {
+				this.handleTodosCommand();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/quit") {
 				this.editor.setText("");
 				await this.shutdown();
@@ -5284,6 +5289,60 @@ export class InteractiveMode {
 		} catch (error: unknown) {
 			await this.handleFatalRuntimeError("Failed to create session", error);
 		}
+	}
+
+	private handleTodosCommand(): void {
+		const cwd = this.sessionManager.getCwd();
+
+		// Prefer rg (ripgrep) for speed; fall back to grep
+		const useRg = (() => {
+			const check = spawnSync("rg", ["--version"], { encoding: "utf-8" });
+			return check.status === 0;
+		})();
+
+		let lines: string[];
+		if (useRg) {
+			const result = spawnSync(
+				"rg",
+				["--line-number", "--no-heading", "--color=never", "--glob=!node_modules", "--glob=!.git", "--glob=!dist", "TODO"],
+				{ encoding: "utf-8", cwd },
+			);
+			lines = (result.stdout ?? "").split("\n").filter((l) => l.trim().length > 0);
+		} else {
+			const result = spawnSync(
+				"grep",
+				["-rn", "--include=*.ts", "--include=*.js", "--include=*.tsx", "--include=*.jsx", "--exclude-dir=node_modules", "--exclude-dir=.git", "--exclude-dir=dist", "TODO"],
+				{ encoding: "utf-8", cwd },
+			);
+			lines = (result.stdout ?? "").split("\n").filter((l) => l.trim().length > 0);
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+
+		if (lines.length === 0) {
+			this.chatContainer.addChild(new Text(theme.fg("success", "No TODOs found."), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		const header = theme.bold(`TODOs (${lines.length})`);
+		const body = lines
+			.map((line) => {
+				// line format from rg/grep: "path:linenum:content"
+				const colonIdx = line.indexOf(":");
+				if (colonIdx === -1) return theme.fg("dim", line);
+				const rest = line.slice(colonIdx + 1);
+				const colonIdx2 = rest.indexOf(":");
+				if (colonIdx2 === -1) return theme.fg("dim", line);
+				const file = line.slice(0, colonIdx);
+				const lineNum = rest.slice(0, colonIdx2);
+				const todoText = rest.slice(colonIdx2 + 1).trim();
+				return `${theme.fg("mdLink", file)}${theme.fg("dim", `:${lineNum}`)} ${todoText}`;
+			})
+			.join("\n");
+
+		this.chatContainer.addChild(new Text(`${header}\n\n${body}`, 1, 0));
+		this.ui.requestRender();
 	}
 
 	private handleDebugCommand(): void {
