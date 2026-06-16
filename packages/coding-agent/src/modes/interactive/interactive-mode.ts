@@ -2537,6 +2537,11 @@ export class InteractiveMode {
 				await this.handleReloadCommand();
 				return;
 			}
+			if (text === "/todo") {
+				this.editor.setText("");
+				await this.handleTodoCommand();
+				return;
+			}
 			if (text === "/debug") {
 				this.handleDebugCommand();
 				this.editor.setText("");
@@ -5316,6 +5321,101 @@ export class InteractiveMode {
 		this.chatContainer.addChild(
 			new Text(`${theme.fg("accent", "✓ Debug log written")}\n${theme.fg("muted", debugLogPath)}`, 1, 1),
 		);
+		this.ui.requestRender();
+	}
+
+	private async handleTodoCommand(): Promise<void> {
+		const cwd = this.sessionManager.getCwd();
+		const rgPath = await ensureTool('rg', true);
+
+		if (!rgPath) {
+			this.showError('ripgrep (rg) is not available. Cannot search for TODOs.');
+			return;
+		}
+
+		const pattern = 'TODO|FIXME|HACK|NOTE|XXX';
+		const args = [
+			'--color=never',
+			'--line-number',
+			'--with-filename',
+			'--hidden',
+			'--glob=!.git',
+			'-e', pattern,
+			cwd,
+		];
+
+		let stdout = '';
+
+		await new Promise<void>((resolve) => {
+			const proc = spawn(rgPath, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+			proc.stdout?.on('data', (data) => { stdout += data.toString(); });
+			proc.on('close', () => resolve());
+		});
+
+		const lines = stdout.trim().split('\n').filter(Boolean);
+
+		if (lines.length === 0) {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new DynamicBorder());
+			this.chatContainer.addChild(new Text(theme.bold(theme.fg('accent', 'TODOs')), 1, 0));
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg('muted', 'No TODO/FIXME/HACK/NOTE/XXX comments found.'), 1, 0));
+			this.chatContainer.addChild(new DynamicBorder());
+			this.ui.requestRender();
+			return;
+		}
+
+		// Group results by file
+		const byFile = new Map<string, Array<{ line: number; text: string; tag: string }>>();
+		const tagPattern = /\b(TODO|FIXME|HACK|NOTE|XXX)\b/i;
+		for (const raw of lines) {
+			// ripgrep output format: filepath:linenum:text
+			// Use regex to handle Windows paths (e.g. C:\\foo.ts:10:text)
+			const match = /^(.+?):(\d+):(.*)$/.exec(raw);
+			if (!match) continue;
+			const filePath = match[1];
+			const lineNum = Number(match[2]);
+			const text = match[3].trim();
+			const tagMatch = tagPattern.exec(text);
+			const tag = tagMatch ? tagMatch[1].toUpperCase() : 'TODO';
+			const relPath = filePath.startsWith(cwd) ? filePath.slice(cwd.length).replace(/^\//, '') : filePath;
+			if (!byFile.has(relPath)) byFile.set(relPath, []);
+			byFile.get(relPath)!.push({ line: lineNum, text, tag });
+		}
+
+		// Colour-code each tag type
+		const tagColor = (tag: string): string => {
+			switch (tag) {
+				case 'FIXME': return theme.fg('error', tag);
+				case 'HACK': return theme.fg('warning', tag);
+				case 'NOTE': return theme.fg('muted', tag);
+				case 'XXX': return theme.fg('warning', tag);
+				default: return theme.fg('accent', tag);
+			}
+		};
+
+		let output = '';
+		for (const [file, items] of byFile) {
+			output += `${theme.bold(theme.fg('accent', file))}\n`;
+			for (const item of items) {
+				const lineLabel = theme.fg('muted', `:${item.line}`);
+				const tagLabel = tagColor(item.tag);
+				const rest = item.text.replace(tagPattern, '').replace(/^[:\s]+/, '');
+				output += `  ${lineLabel}  ${tagLabel} ${rest}\n`;
+			}
+			output += '\n';
+		}
+
+		const totalCount = lines.length;
+		const fileCount = byFile.size;
+		const summary = theme.fg('muted', `${totalCount} item${totalCount === 1 ? '' : 's'} across ${fileCount} file${fileCount === 1 ? '' : 's'}`);
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(`${theme.bold(theme.fg('accent', 'TODOs'))}  ${summary}`, 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(output.trimEnd(), 1, 0));
+		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}
 
