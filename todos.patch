@@ -1,6 +1,6 @@
 --- a/packages/coding-agent/src/modes/interactive/interactive-mode.ts
 +++ b/packages/coding-agent/src/modes/interactive/interactive-mode.ts
-@@ -2485,6 +2485,11 @@ import { UserMessageSelectorComponent } from "./components/user-message-selector
+@@ -2484,6 +2484,11 @@
  			if (text === "/session") {
  				this.handleSessionCommand();
  				this.editor.setText("");
@@ -14,7 +14,7 @@
  			if (text === "/changelog") {
  				this.handleChangelogCommand();
  				this.editor.setText("");
-@@ -5265,6 +5270,42 @@ import { UserMessageSelectorComponent } from "./components/user-message-selector
+@@ -5264,6 +5269,42 @@
  		this.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
  		this.chatContainer.addChild(new DynamicBorder());
  		this.ui.requestRender();
