@@ -1,6 +1,6 @@
 --- a/packages/coding-agent/src/modes/interactive/interactive-mode.ts
 +++ b/packages/coding-agent/src/modes/interactive/interactive-mode.ts
-@@ -2484,6 +2484,11 @@
+@@ -2484,8 +2484,13 @@
  			if (text === "/session") {
  				this.handleSessionCommand();
  				this.editor.setText("");
@@ -14,7 +14,7 @@
  			if (text === "/changelog") {
  				this.handleChangelogCommand();
  				this.editor.setText("");
-@@ -5264,6 +5269,42 @@
+@@ -5264,8 +5269,61 @@
  		this.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
  		this.chatContainer.addChild(new DynamicBorder());
  		this.ui.requestRender();
@@ -76,3 +76,4 @@
  	private async handleClearCommand(): Promise<void> {
  		if (this.loadingAnimation) {
  			this.loadingAnimation.stop();
+ 			this.loadingAnimation = undefined;
