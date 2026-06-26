@@ -2486,6 +2486,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/todos") {
+				this.handleTodosCommand();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/changelog") {
 				this.handleChangelogCommand();
 				this.editor.setText("");
@@ -5262,6 +5267,59 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Keyboard Shortcuts")), 1, 0));
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
+	}
+
+	private handleTodosCommand(): void {
+		const cwd = this.sessionManager.getCwd();
+		const patterns = ["TODO", "FIXME", "HACK", "XXX"];
+		const patternArg = patterns.join("|");
+
+		const result = spawnSync(
+			"grep",
+			["-rn", "--include=*.ts", "--include=*.tsx", "--include=*.js", "--include=*.jsx", "-E", patternArg, "."],
+			{ cwd, encoding: "utf-8", maxBuffer: 1024 * 1024 },
+		);
+
+		const lines = (result.stdout ?? "")
+			.split("\n")
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0);
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(
+			new Text(theme.bold(theme.fg("accent", `TODOs (${lines.length})`)), 1, 0),
+		);
+		this.chatContainer.addChild(new Spacer(1));
+
+		if (lines.length === 0) {
+			this.chatContainer.addChild(new Text(theme.fg("dim", "No TODOs found."), 1, 1));
+		} else {
+			const grouped = new Map<string, string[]>();
+			for (const line of lines) {
+				const colonIdx = line.indexOf(":");
+				const file = colonIdx !== -1 ? line.slice(0, colonIdx) : line;
+				const rest = colonIdx !== -1 ? line.slice(colonIdx + 1) : "";
+				const existing = grouped.get(file);
+				if (existing) {
+					existing.push(rest);
+				} else {
+					grouped.set(file, [rest]);
+				}
+			}
+			let md = "";
+			for (const [file, todos] of grouped) {
+				md += `**${file}**\n`;
+				for (const todo of todos) {
+					md += `- \`${todo.trim()}\`\n`;
+				}
+				md += "\n";
+			}
+			this.chatContainer.addChild(new Markdown(md.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
+		}
+
 		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}
